@@ -1,8 +1,8 @@
 # Personal Finance Management
 
 An offline Python desktop application, built one user-defined menu at a time.
-Version 0.2 provides the My Finance monthly entry and history module, local SQLite
-storage, an explicit module registry, and privacy enforcement.
+Version 0.3 provides My Finance monthly entry, history, and interactive graphs,
+local SQLite storage, an explicit module registry, and privacy enforcement.
 
 ## Run
 
@@ -22,7 +22,9 @@ needed to run the application once Python and Tcl/Tk are available.
 
 1. Open **My Finance → Monthly entry**. The month and year default to the current
    month on your computer. To choose another month/year, select it and click
-   **Load month** before entering values.
+   **Load month** before entering values. All eight entry values belong to this
+   loaded month/year. The save button names the exact period and is disabled
+   whenever the month/year selection changes until you load that period.
 2. Enter **Invested** and **Current value** for **Stocks**, **Mutual Funds**,
    **FD** (fixed deposits), and **RD** (recurring deposits). Values are monthly
    snapshots of total invested capital and current value, not just contributions
@@ -35,6 +37,19 @@ needed to run the application once Python and Tcl/Tk are available.
    MoM current difference for each asset. Horizontal/vertical scrolling shows
    the full history. Select a row for a compact breakdown of all four assets.
 5. Choose **Edit selected month**, or double-click a history row, to load its entry.
+6. Open **Graph** to compare all saved months in calendar order. Each asset has
+   separate checkboxes for invested, current, MoM invested, and MoM current.
+   Uncheck any field to hide it without changing saved data. **Balances** selects
+   the eight entered-value series; **MoM changes** selects the calculated
+   differences. **Show all** and **Hide all** control every series at once.
+   Colors identify assets and line styles identify fields. Hover over a point
+   for its exact month/year, field, and INR amount. Graphs refresh after saves.
+
+The graph uses a local Tkinter Canvas, with no external chart packages or web
+resources. The horizontal axis includes month and year; the vertical axis is INR.
+Missing months and unknown MoM values break lines rather than being plotted as
+zero. A single saved month is displayed with points. All amount calculations
+remain in integer paise; floating point is used only for drawing pixel positions.
 
 **MoM invested difference** = this month's invested amount − previous calendar
 month's invested amount, for the same asset. **MoM current difference** uses the

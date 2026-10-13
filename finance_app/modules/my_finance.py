@@ -6,6 +6,7 @@ import tkinter as tk
 from tkinter import messagebox, ttk
 
 from .finance import ASSETS, MONTHS, FinanceStore, format_amount, input_amount, month_label, parse_amount, validate_period
+from .finance_graph import FinanceGraph
 
 
 class MyFinanceView:
@@ -21,18 +22,23 @@ class MyFinanceView:
         self.tabs.pack(fill="both", expand=True)
         self.entry_tab = ttk.Frame(self.tabs, padding=16)
         self.history_tab = ttk.Frame(self.tabs, padding=16)
+        self.graph_tab = ttk.Frame(self.tabs, padding=16)
         self.tabs.add(self.entry_tab, text="Monthly entry")
         self.tabs.add(self.history_tab, text="All months")
+        self.tabs.add(self.graph_tab, text="Graph")
         self._build_entry()
         self._build_history()
+        self.graph = FinanceGraph(self.graph_tab)
         today = date.today()
         self.month.set(MONTHS[today.month - 1])
         self.year.set(str(today.year))
         self.load_month(check_changes=False)
         self.refresh_history()
+        self.month.trace_add("write", self.period_changed)
+        self.year.trace_add("write", self.period_changed)
 
     def _build_entry(self):
-        selector = ttk.Frame(self.entry_tab)
+        selector = ttk.LabelFrame(self.entry_tab, text="Entry month and year — applies to every value below", padding=(12, 8))
         selector.pack(fill="x", pady=(0, 16))
         ttk.Label(selector, text="Month").grid(row=0, column=0, padx=(0, 8))
         self.month = tk.StringVar(master=self.parent)
@@ -61,10 +67,25 @@ class MyFinanceView:
                 variables.append(variable)
             self.fields[asset] = tuple(variables)
 
-        ttk.Button(self.entry_tab, text="Save month", command=self.save_month).pack(anchor="w", pady=(16, 8))
+        self.save_button = ttk.Button(self.entry_tab, text="Save month", command=self.save_month)
+        self.save_button.pack(anchor="w", pady=(16, 8))
         self.status = ttk.Label(self.entry_tab, wraplength=580)
         self.status.pack(anchor="w")
-        ttk.Label(self.entry_tab, text="MoM differences are calculated automatically in All months.", wraplength=580).pack(anchor="w", pady=(12, 0))
+        ttk.Label(self.entry_tab, text="Saved entries appear in All months and Graph. MoM differences are calculated automatically.", wraplength=580).pack(anchor="w", pady=(12, 0))
+
+    def period_changed(self, *args):
+        try:
+            period = self.selected_period()
+        except ValueError:
+            self.save_button.state(["disabled"])
+            self.status.configure(text="Choose a valid month and year, then click Load month.")
+            return
+        if period != self.loaded_period:
+            self.save_button.state(["disabled"])
+            self.status.configure(text=f"Selected {month_label(*period)}. Click Load month to enter or edit values for this period.")
+        else:
+            self.save_button.state(["!disabled"])
+            self.status.configure(text=f"All entry values belong to {month_label(*period)}.")
 
     def _build_history(self):
         self.history_heading = ttk.Label(self.history_tab, text="Monthly finance history", style="Heading.TLabel")
@@ -135,6 +156,8 @@ class MyFinanceView:
         self.loaded_period = period
         self.original_values = self.field_values()
         self.entry_heading.configure(text=f"Monthly entry — {month_label(*period)}")
+        self.save_button.configure(text=f"Save {month_label(*period)}")
+        self.save_button.state(["!disabled"])
         self.status.configure(text="Saved month loaded. You can update these values." if record else "New month. Enter all eight amounts, using 0 where applicable.")
 
     def save_month(self):
@@ -168,8 +191,10 @@ class MyFinanceView:
         try:
             rows = self.store.history()
         except (sqlite3.Error, RuntimeError) as error:
+            self.graph.set_history(())
             messagebox.showerror("Cannot read history", str(error), parent=self.parent)
             return
+        self.graph.set_history(rows)
         for row in rows:
             period = (row.record.year, row.record.month)
             item = f"{period[0]}-{period[1]:02d}"

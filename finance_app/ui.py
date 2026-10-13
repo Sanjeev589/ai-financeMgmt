@@ -53,7 +53,7 @@ class FinanceApp:
             return
         self.paragraph("Welcome to your personal finance workspace. Your information is stored locally.")
         self.paragraph("Open My Finance to record monthly invested and current values for Stocks, Mutual Funds, FD, and RD.")
-        self.paragraph("View saved months and automatic month-over-month differences in the All months tab. More menus will be added as they are defined.")
+        self.paragraph("View saved months and month-over-month differences in All months. Use Graph to compare trends and show or hide any field. More menus will be added as they are defined.")
 
     def privacy(self):
         if not self.page("Privacy & storage"):
