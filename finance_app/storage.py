@@ -31,7 +31,7 @@ class Database:
                 self.path.chmod(0o600)
             self.connection.execute("PRAGMA foreign_keys = ON")
             version = self.connection.execute("PRAGMA user_version").fetchone()[0]
-            if version > 3:
+            if version > 4:
                 raise RuntimeError("This database requires a newer application version.")
             # Explicit BEGIN makes SQLite DDL and user_version one transaction.
             self.connection.execute("BEGIN")
@@ -88,7 +88,39 @@ class Database:
                             SELECT ?, year, month, asset, invested, current FROM monthly_finance_legacy
                         """, (cursor.lastrowid,))
                     self.connection.execute("DROP TABLE monthly_finance_legacy")
-                self.connection.execute("PRAGMA user_version = 3")
+                if version < 4:
+                    self.connection.execute("""
+                        CREATE TABLE expense_categories (
+                            id INTEGER PRIMARY KEY,
+                            name TEXT NOT NULL CHECK (length(name) BETWEEN 1 AND 80),
+                            name_key TEXT NOT NULL UNIQUE
+                        )
+                    """)
+                    self.connection.execute("""
+                        CREATE TABLE expense_subcategories (
+                            id INTEGER PRIMARY KEY,
+                            category_id INTEGER NOT NULL REFERENCES expense_categories(id),
+                            name TEXT NOT NULL CHECK (length(name) BETWEEN 1 AND 80),
+                            name_key TEXT NOT NULL,
+                            UNIQUE (category_id, name_key)
+                        )
+                    """)
+                    self.connection.execute("""
+                        CREATE TABLE expenses (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            user_id INTEGER NOT NULL REFERENCES users(id),
+                            year INTEGER NOT NULL CHECK (year BETWEEN 1900 AND 9999),
+                            month INTEGER NOT NULL CHECK (month BETWEEN 1 AND 12),
+                            subcategory_id INTEGER NOT NULL REFERENCES expense_subcategories(id),
+                            amount INTEGER NOT NULL CHECK (
+                                typeof(amount) = 'integer' AND amount BETWEEN 1 AND 99999999999999
+                            ),
+                            description TEXT NOT NULL DEFAULT '' CHECK (length(description) <= 500)
+                        )
+                    """)
+                    self.connection.execute("CREATE INDEX expense_scope ON expenses (user_id, year, month)")
+                    self.connection.execute("CREATE INDEX expense_month ON expenses (year, month)")
+                self.connection.execute("PRAGMA user_version = 4")
         except Exception:
             self.connection.close()
             raise

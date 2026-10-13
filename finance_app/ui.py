@@ -54,6 +54,7 @@ class FinanceApp:
         self.paragraph("Welcome to your personal finance workspace. Your information is stored locally.")
         self.paragraph("Create profiles by name in Users. In My Finance, select a user to record monthly invested and current values for Stocks, Mutual Funds, FD, and RD.")
         self.paragraph("Select ALL to view combined monthly totals and graphs for all users. Profiles are local names, with no online accounts.")
+        self.paragraph("Expense Calculator records expenses for a selected user and month, with category totals and an overall monthly total.")
         self.paragraph("View saved months and month-over-month differences in All months. Use Graph to compare trends and show or hide any field. More menus will be added as they are defined.")
 
     def privacy(self):

@@ -1,8 +1,8 @@
 # Personal Finance Management
 
 An offline Python desktop application, built one user-defined menu at a time.
-Version 0.4 provides named users, My Finance monthly entry, per-user and combined
-history/graphs, local SQLite storage, and privacy enforcement.
+Version 0.5 provides named users, My Finance monthly entry and graphs, an Expense
+Calculator with monthly category totals, local SQLite storage, and privacy enforcement.
 
 ## Run
 
@@ -93,6 +93,37 @@ database starts with no profiles; add them in Users.
 Unsaved edits require confirmation before switching users or months, leaving the module,
 or closing the application.
 
+## Expense Calculator
+
+1. Open **Expense Calculator**, select a named user, choose the **Month** and
+   **Year**, and click **Load month**. Each expense belongs to that user and month.
+   **ALL** shows combined expenses across users for the selected month and is read-only.
+2. Enter a positive **Amount** in INR (up to two decimal places, without commas),
+   choose **Category** and **Subcategory** from the dropdowns, and optionally enter
+   a **Description** of up to 500 characters. Subcategory choices are filtered by
+   the selected category. Changing category clears the old subcategory selection.
+3. Click **Add expense**. You can add multiple entries in the same category and
+   month. Each is a separate expense, so identical values are counted separately.
+   The entry list and totals update immediately after saving.
+4. Open **Category totals** for sums and entry counts by category and subcategory.
+   The selected user's **monthly total expense** appears at the bottom, with the
+   **ALL users combined** monthly total below it. Amounts from different months or
+   years are never mixed.
+5. To correct an entry, select it, click **Remove selected expense**, confirm,
+   and add the corrected expense. Removal is restricted to the loaded user/month.
+
+**Dropdown definitions are awaiting the user's category/subcategory list.** No
+guessed categories are installed in real databases. Until values are configured,
+the UI shows this status and expense entry is disabled. The service supports
+local category definitions through `ExpenseCatalog`; adding the supplied values
+will populate these dependent dropdowns. Synthetic test definitions never enter
+the application's real database.
+
+Expense totals use exact integer paise. Saving is blocked if the user/month/year
+selection changes until that scope is loaded. Unsaved expense input requires
+confirmation before loading another scope or leaving the menu. The database
+upgrade preserves existing users, portfolio data, and settings.
+
 ## Data and privacy
 
 - SQLite data stays outside the source folder:
@@ -123,6 +154,11 @@ and migration. Headless UI callback tests exercise user creation, financial entr
 user selection, summaries, and the real graph drawing path with a recording Canvas;
 desktop font/layout verification still requires a display. Test records are temporary
 and are never preloaded into the application or uploaded as databases.
+
+Expense tests additionally enter **80 synthetic expenses** through the entry UI
+callbacks for five users across two months. They verify every category/subcategory
+sum, entry count, per-user and ALL monthly total, dependent dropdowns, removal,
+persistence, schema upgrade, validation, and operation with networking blocked.
 
 New menus live under `finance_app/modules/` and are registered in
 `finance_app/modules/registry.py`. Each builder receives the content frame and

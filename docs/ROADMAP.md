@@ -9,9 +9,13 @@
    for entry/history/graphs, read-only ALL sums, and combined monthly summaries.
    Automatic MoM uses the same reporting users in adjacent months; differences
    remain unknown when snapshots are missing.
-4. Implement subsequent user-defined menus with synthetic test data, verify
+4. Expense Calculator: user/month/year entry, amount/category/subcategory/
+   description fields, dependent dropdowns, exact category and subcategory sums,
+   overall monthly totals, and ALL user aggregation. Category definitions await
+   the user's supplied list; no guessed definitions are installed.
+5. Implement subsequent user-defined menus with synthetic test data, verify
    locally, and commit and publish only source and documentation to GitHub.
-5. Repeat for each subsequent menu. Never publish application data.
+6. Repeat for each subsequent menu. Never publish application data.
 
 Current interpretation: monthly amounts are portfolio snapshots in INR. Both
 invested and current differences are calculated for each asset against the
