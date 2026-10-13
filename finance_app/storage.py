@@ -31,13 +31,31 @@ class Database:
                 self.path.chmod(0o600)
             self.connection.execute("PRAGMA foreign_keys = ON")
             version = self.connection.execute("PRAGMA user_version").fetchone()[0]
-            if version > 1:
+            if version > 2:
                 raise RuntimeError("This database requires a newer application version.")
+            # Explicit BEGIN makes SQLite DDL and user_version one transaction.
+            self.connection.execute("BEGIN")
             with self.connection:
-                self.connection.execute(
-                    "CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)"
-                )
-                self.connection.execute("PRAGMA user_version = 1")
+                if version < 1:
+                    self.connection.execute(
+                        "CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)"
+                    )
+                if version < 2:
+                    self.connection.execute("""
+                        CREATE TABLE monthly_finance (
+                            year INTEGER NOT NULL CHECK (year BETWEEN 1900 AND 9999),
+                            month INTEGER NOT NULL CHECK (month BETWEEN 1 AND 12),
+                            asset TEXT NOT NULL CHECK (asset IN ('stocks', 'mutual_funds', 'fd', 'rd')),
+                            invested INTEGER NOT NULL CHECK (
+                                typeof(invested) = 'integer' AND invested BETWEEN 0 AND 99999999999999
+                            ),
+                            current INTEGER NOT NULL CHECK (
+                                typeof(current) = 'integer' AND current BETWEEN 0 AND 99999999999999
+                            ),
+                            PRIMARY KEY (year, month, asset)
+                        )
+                    """)
+                self.connection.execute("PRAGMA user_version = 2")
         except Exception:
             self.connection.close()
             raise

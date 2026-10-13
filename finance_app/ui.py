@@ -11,9 +11,10 @@ class FinanceApp:
     def __init__(self, root, database):
         self.root = root
         self.database = database
+        self.active_view = None
         root.title("Personal Finance — Offline")
-        root.geometry("1000x650")
-        root.minsize(780, 500)
+        root.geometry("1120x760")
+        root.minsize(960, 680)
         root.protocol("WM_DELETE_WINDOW", self.close)
         style = ttk.Style(root)
         style.theme_use("clam")
@@ -36,34 +37,44 @@ class FinanceApp:
         self.home()
 
     def page(self, title):
+        if self.active_view is not None and not self.active_view.can_discard_changes():
+            return False
+        self.active_view = None
         for child in self.content.winfo_children():
             child.destroy()
         ttk.Label(self.content, text=title, style="Title.TLabel").pack(anchor="w", pady=(0, 25))
+        return True
 
     def paragraph(self, text):
         ttk.Label(self.content, text=text, wraplength=610, justify="left").pack(anchor="w", pady=(0, 18))
 
     def home(self):
-        self.page("Your finances, on your computer")
+        if not self.page("Your finances, on your computer"):
+            return
         self.paragraph("Welcome to your personal finance workspace. Your information is stored locally.")
-        self.paragraph("The application foundation is ready. Finance menus will appear here as each module is defined and implemented.")
-        self.paragraph("No finance records have been created by this starter application.")
+        self.paragraph("Open My Finance to record monthly invested and current values for Stocks, Mutual Funds, FD, and RD.")
+        self.paragraph("View saved months and automatic month-over-month differences in the All months tab. More menus will be added as they are defined.")
 
     def privacy(self):
-        self.page("Privacy & storage")
+        if not self.page("Privacy & storage"):
+            return
         self.paragraph("The application has no cloud sync, telemetry, bank connections, web assets, or automatic updates. Network and external-process operations are blocked at runtime.")
         self.paragraph(f"Local database:\n{self.database.path}")
         self.paragraph("Data is stored outside the project folder. Databases, imported files, exports, and backups must never be included in Git commits.")
         self.paragraph("The local database is not encrypted. Protect this computer with your operating system account and disk encryption.")
 
     def about(self):
-        self.page("About")
+        if not self.page("About"):
+            return
         self.paragraph(f"Personal Finance Management\nVersion {__version__}\nPython desktop application with SQLite local storage.")
 
     def open_module(self, module):
-        self.page(module.title)
-        module.build(self.content, self.database)
+        if not self.page(module.title):
+            return
+        self.active_view = module.build(self.content, self.database)
 
     def close(self):
+        if self.active_view is not None and not self.active_view.can_discard_changes():
+            return
         self.database.close()
         self.root.destroy()
