@@ -94,7 +94,9 @@ class FinanceGraph:
         self.enabled = {}
         self.hit_points = []
         self.pending_redraw = None
-        ttk.Label(parent, text="Compare monthly finances", style="Heading.TLabel").pack(anchor="w", pady=(0, 6))
+        self.heading = ttk.Label(parent, text="Compare monthly finances", style="Heading.TLabel")
+        self.heading.pack(anchor="w", pady=(0, 6))
+        self.scope_name = "ALL"
         ttk.Label(parent, text="Check or uncheck any field to show or hide its line. All amounts are in INR.\nDashed: invested • Solid: current • Dotted: MoM invested • Dash-dot: MoM current", wraplength=660).pack(anchor="w", pady=(0, 8))
         controls = ttk.Frame(parent)
         controls.pack(fill="x")
@@ -121,6 +123,10 @@ class FinanceGraph:
     def set_history(self, history):
         self.history = tuple(history)
         self.draw()
+
+    def set_scope(self, name):
+        self.scope_name = name
+        self.heading.configure(text=f"{name} — monthly finance graph")
 
     def select_metrics(self, metrics):
         for asset, _ in ASSETS:
@@ -198,4 +204,4 @@ class FinanceGraph:
             self.hover_text.set(self.hint)
             return
         distance, label, point = min(nearby, key=lambda item: item[0])
-        self.hover_text.set(f"{month_label(point.year, point.month)} • {label}: {format_amount(point.amount)}" if distance <= 144 else self.hint)
+        self.hover_text.set(f"{self.scope_name} • {month_label(point.year, point.month)} • {label}: {format_amount(point.amount)}" if distance <= 144 else self.hint)

@@ -3,6 +3,8 @@
 from dataclasses import dataclass
 import re
 
+from .users import UserStore
+
 
 ASSETS = (("stocks", "Stocks"), ("mutual_funds", "Mutual Funds"), ("fd", "FD"), ("rd", "RD"))
 MONTHS = (
@@ -68,6 +70,7 @@ class MonthRecord:
     year: int
     month: int
     balances: tuple[Balance, ...]
+    user_ids: frozenset[int] = frozenset()
 
 
 @dataclass(frozen=True)
@@ -84,11 +87,16 @@ class HistoryRow:
 
 
 class FinanceStore:
-    def __init__(self, database):
+    def __init__(self, database, user_id):
         self.connection = database.connection
+        # None means the read-only ALL scope. A named scope is mandatory to save.
+        self.user_id = user_id
+        self.user_name = "ALL" if user_id is None else UserStore(database).get(user_id).name
 
     def save_month(self, year, month, values):
         """Create or replace all four asset balances atomically for one month."""
+        if self.user_id is None:
+            raise ValueError("ALL is a combined, read-only view. Select a named user before saving.")
         validate_period(year, month)
         if set(values) != {asset for asset, _ in ASSETS}:
             raise ValueError("Enter invested and current values for all four assets.")
@@ -99,43 +107,68 @@ class FinanceStore:
                 raise ValueError(f"{label}: invested and current values are required.")
             if any(type(amount) is not int or not 0 <= amount <= MAX_AMOUNT for amount in amounts):
                 raise ValueError(f"{label}: amounts must be non-negative integer paise within the supported limit.")
-            rows.append((year, month, asset, *amounts))
+            rows.append((self.user_id, year, month, asset, *amounts))
         with self.connection:
             self.connection.executemany("""
-                INSERT INTO monthly_finance (year, month, asset, invested, current)
-                VALUES (?, ?, ?, ?, ?)
-                ON CONFLICT(year, month, asset) DO UPDATE SET
+                INSERT INTO monthly_finance (user_id, year, month, asset, invested, current)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(user_id, year, month, asset) DO UPDATE SET
                     invested = excluded.invested, current = excluded.current
             """, rows)
 
     @staticmethod
-    def _record(year, month, rows):
+    def _record(year, month, rows, user_ids=frozenset()):
         values = {row[0]: Balance(*row) for row in rows}
         if set(values) != {asset for asset, _ in ASSETS}:
             raise RuntimeError("The saved month is incomplete; all four asset balances are required.")
-        return MonthRecord(year, month, tuple(values[asset] for asset, _ in ASSETS))
+        return MonthRecord(year, month, tuple(values[asset] for asset, _ in ASSETS), user_ids)
 
     def get_month(self, year, month):
         validate_period(year, month)
-        rows = self.connection.execute(
-            "SELECT asset, invested, current FROM monthly_finance WHERE year = ? AND month = ?",
-            (year, month),
-        ).fetchall()
-        return self._record(year, month, rows) if rows else None
+        records = self._records(year, month)
+        return records.get((year, month))
+
+    def _records(self, year=None, month=None):
+        sql = "SELECT user_id, year, month, asset, invested, current FROM monthly_finance"
+        clauses, parameters = [], []
+        if self.user_id is not None:
+            clauses.append("user_id = ?")
+            parameters.append(self.user_id)
+        if year is not None:
+            clauses.append("year = ? AND month = ?")
+            parameters.extend((year, month))
+        if clauses:
+            sql += " WHERE " + " AND ".join(clauses)
+        sql += " ORDER BY year DESC, month DESC, user_id"
+        grouped = {}
+        for user_id, year, month, asset, invested, current in self.connection.execute(sql, parameters):
+            grouped.setdefault((year, month, user_id), []).append((asset, invested, current))
+        by_period = {}
+        for (year, month, user_id), rows in grouped.items():
+            record = self._record(year, month, rows, frozenset((user_id,)))
+            by_period.setdefault((year, month), []).append(record)
+        records = {}
+        for period, contributors in by_period.items():
+            # Python integers avoid SQLite SUM overflow when many users' values
+            # are combined. No user's missing snapshot is silently stored as 0.
+            totals = tuple(Balance(
+                asset,
+                sum(record.balances[index].invested for record in contributors),
+                sum(record.balances[index].current for record in contributors),
+            ) for index, (asset, _) in enumerate(ASSETS))
+            user_ids = frozenset(user_id for record in contributors for user_id in record.user_ids)
+            records[period] = MonthRecord(*period, totals, user_ids)
+        return records
 
     def history(self):
         """Newest first; missing calendar months never become a zero baseline."""
-        groups = {}
-        rows = self.connection.execute(
-            "SELECT year, month, asset, invested, current FROM monthly_finance ORDER BY year DESC, month DESC"
-        ).fetchall()
-        for year, month, asset, invested, current in rows:
-            groups.setdefault((year, month), []).append((asset, invested, current))
-        records = {period: self._record(*period, rows) for period, rows in groups.items()}
+        records = self._records()
         history = []
         for period, record in records.items():
             previous = records.get(previous_period(*period))
-            baseline = {balance.asset: balance for balance in previous.balances} if previous else {}
+            # Combined MoM is known only when the same users have snapshots in
+            # both months; otherwise sums of individual differences are unknown.
+            baseline = {balance.asset: balance for balance in previous.balances} if previous and previous.user_ids == record.user_ids else {}
             changes = tuple(
                 AssetChange(
                     balance,

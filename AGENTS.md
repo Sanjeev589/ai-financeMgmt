@@ -11,6 +11,10 @@
 - Register new menu modules explicitly. Implement menus as described by the user.
 - Store money as integer minor units or use Decimal, never binary floats.
 - Use parameterized SQL. Apply versioned, transactional database migrations.
+- Every financial write requires a valid named user. ALL is read-only and sums
+  snapshots for each month. Never save ALL amounts as an individual user's data.
+- Calculate MoM automatically. Combined MoM is unknown if reporting users differ
+  between adjacent months. Preserve pre-user records under Existing data on migration.
 - Run `python -m unittest discover -s tests -v` before every source commit.
 - Review the exact staged file list before committing and uploading source updates.
 - No repository publishing code or GitHub credentials belong inside the application.

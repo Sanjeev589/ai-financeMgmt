@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Callable
 
 from .my_finance import build as build_my_finance
+from .users import build as build_users
 
 
 @dataclass(frozen=True)
@@ -14,4 +15,7 @@ class MenuModule:
 
 
 # Each user-described module gets an explicit entry here.
-MODULES: tuple[MenuModule, ...] = (MenuModule("my_finance", "My Finance", build_my_finance),)
+MODULES: tuple[MenuModule, ...] = (
+    MenuModule("my_finance", "My Finance", build_my_finance),
+    MenuModule("users", "Users", build_users),
+)

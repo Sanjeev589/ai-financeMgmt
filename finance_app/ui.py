@@ -13,8 +13,8 @@ class FinanceApp:
         self.database = database
         self.active_view = None
         root.title("Personal Finance — Offline")
-        root.geometry("1120x760")
-        root.minsize(960, 680)
+        root.geometry("1220x920")
+        root.minsize(1060, 840)
         root.protocol("WM_DELETE_WINDOW", self.close)
         style = ttk.Style(root)
         style.theme_use("clam")
@@ -52,7 +52,8 @@ class FinanceApp:
         if not self.page("Your finances, on your computer"):
             return
         self.paragraph("Welcome to your personal finance workspace. Your information is stored locally.")
-        self.paragraph("Open My Finance to record monthly invested and current values for Stocks, Mutual Funds, FD, and RD.")
+        self.paragraph("Create profiles by name in Users. In My Finance, select a user to record monthly invested and current values for Stocks, Mutual Funds, FD, and RD.")
+        self.paragraph("Select ALL to view combined monthly totals and graphs for all users. Profiles are local names, with no online accounts.")
         self.paragraph("View saved months and month-over-month differences in All months. Use Graph to compare trends and show or hide any field. More menus will be added as they are defined.")
 
     def privacy(self):

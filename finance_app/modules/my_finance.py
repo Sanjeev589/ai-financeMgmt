@@ -7,16 +7,33 @@ from tkinter import messagebox, ttk
 
 from .finance import ASSETS, MONTHS, FinanceStore, format_amount, input_amount, month_label, parse_amount, validate_period
 from .finance_graph import FinanceGraph
+from .users import UserStore
 
 
 class MyFinanceView:
     def __init__(self, parent, database):
         self.parent = parent
-        self.store = FinanceStore(database)
+        self.database = database
+        self.users = UserStore(database)
+        self.store = FinanceStore(database, None)
+        self.combined_store = FinanceStore(database, None)
+        self.loaded_user_id = None
         self.loaded_period = None
         self.original_values = ()
         self.history_rows = {}
         self.fields = {}
+        self.entry_widgets = []
+        self.combined_rows = {}
+
+        selector = ttk.LabelFrame(parent, text="Select user — applies to entries, history, and graph", padding=(12, 8))
+        selector.pack(fill="x", pady=(0, 12))
+        ttk.Label(selector, text="User").pack(side="left", padx=(0, 10))
+        self.user_choice = tk.StringVar(master=parent, value="ALL")
+        self.user_choices = {user.name: user.id for user in self.users.list_users()}
+        self.user_dropdown = ttk.Combobox(selector, textvariable=self.user_choice, values=("ALL", *self.user_choices), state="readonly", width=28)
+        self.user_dropdown.pack(side="left", padx=(0, 12))
+        self.user_dropdown.bind("<<ComboboxSelected>>", self.user_changed)
+        ttk.Label(selector, text="ALL = combined view. Add names in Users.").pack(side="left")
 
         self.tabs = ttk.Notebook(parent)
         self.tabs.pack(fill="both", expand=True)
@@ -63,7 +80,9 @@ class MyFinanceView:
             variables = []
             for column in (1, 2):
                 variable = tk.StringVar(master=self.parent)
-                ttk.Entry(grid, textvariable=variable, width=19).grid(row=row, column=column, sticky="ew", padx=(0, 12), pady=6)
+                entry = ttk.Entry(grid, textvariable=variable, width=19)
+                entry.grid(row=row, column=column, sticky="ew", padx=(0, 12), pady=6)
+                self.entry_widgets.append(entry)
                 variables.append(variable)
             self.fields[asset] = tuple(variables)
 
@@ -74,18 +93,51 @@ class MyFinanceView:
         ttk.Label(self.entry_tab, text="Saved entries appear in All months and Graph. MoM differences are calculated automatically.", wraplength=580).pack(anchor="w", pady=(12, 0))
 
     def period_changed(self, *args):
+        if self.store.user_id is None:
+            self.save_button.state(["disabled"])
+            self.status.configure(text="ALL is read-only. Select a named user to enter data, or Load month to view its combined values.")
+            return
         try:
             period = self.selected_period()
         except ValueError:
             self.save_button.state(["disabled"])
             self.status.configure(text="Choose a valid month and year, then click Load month.")
             return
-        if period != self.loaded_period:
+        if period != self.loaded_period or self.store.user_id != self.loaded_user_id:
             self.save_button.state(["disabled"])
             self.status.configure(text=f"Selected {month_label(*period)}. Click Load month to enter or edit values for this period.")
         else:
             self.save_button.state(["!disabled"])
-            self.status.configure(text=f"All entry values belong to {month_label(*period)}.")
+            self.status.configure(text=f"All entry values belong to {self.store.user_name} — {month_label(*period)}.")
+
+    def user_changed(self, event=None):
+        choice = self.user_choice.get()
+        if choice != "ALL" and choice not in self.user_choices:
+            self.user_choice.set(self.store.user_name)
+            return
+        if not self.can_discard_changes():
+            self.user_choice.set(self.store.user_name)
+            return
+        user_id = None if choice == "ALL" else self.user_choices[choice]
+        try:
+            self.store = FinanceStore(self.database, user_id)
+        except (ValueError, sqlite3.Error) as error:
+            self.user_choice.set(self.store.user_name)
+            messagebox.showerror("Cannot select user", str(error), parent=self.parent)
+            return
+        # Drop the previous user's draft before loading another profile. If the
+        # period or read fails, saving remains disabled until a successful load.
+        for variables in self.fields.values():
+            for variable in variables:
+                variable.set("")
+        self.original_values = self.field_values()
+        self.loaded_period = None
+        self.loaded_user_id = None
+        self.save_button.state(["disabled"])
+        for entry in self.entry_widgets:
+            entry.state(["readonly"] if user_id is None else ["!readonly"])
+        self.load_month(check_changes=False)
+        self.refresh_history()
 
     def _build_history(self):
         self.history_heading = ttk.Label(self.history_tab, text="Monthly finance history", style="Heading.TLabel")
@@ -116,12 +168,16 @@ class MyFinanceView:
 
         self.detail_heading = ttk.Label(self.history_tab, text="Select a month to see its breakdown", style="Heading.TLabel")
         self.detail_heading.pack(anchor="w", pady=(12, 6))
-        self.details = ttk.Treeview(self.history_tab, columns=("asset", "invested", "current", "invested_diff", "current_diff"), show="headings", height=4, selectmode="none")
-        for field, title, width in (("asset", "Asset", 95), ("invested", "Invested (₹)", 120), ("current", "Current (₹)", 120), ("invested_diff", "MoM invested Δ", 140), ("current_diff", "MoM current Δ", 140)):
+        self.details = ttk.Treeview(self.history_tab, columns=("asset", "invested", "current", "invested_diff", "current_diff"), show="headings", height=9, selectmode="none")
+        for field, title, width in (("asset", "User / asset", 160), ("invested", "Invested (₹)", 120), ("current", "Current (₹)", 120), ("invested_diff", "MoM invested Δ", 140), ("current_diff", "MoM current Δ", 140)):
             self.details.heading(field, text=title)
             self.details.column(field, width=width, minwidth=75, anchor="w" if field == "asset" else "e")
         self.details.pack(fill="x")
-        ttk.Button(self.history_tab, text="Edit selected month", command=self.edit_selected).pack(anchor="w", pady=(8, 0))
+        self.details.tag_configure("combined", background="#e8f0fe")
+        self.combined_status = ttk.Label(self.history_tab, wraplength=690)
+        self.combined_status.pack(anchor="w", pady=(6, 0))
+        self.edit_button = ttk.Button(self.history_tab, text="Edit selected month", command=self.edit_selected)
+        self.edit_button.pack(anchor="w", pady=(8, 0))
 
     def selected_period(self):
         try:
@@ -154,17 +210,23 @@ class MyFinanceView:
             for index, variable in enumerate(self.fields[asset]):
                 variable.set(input_amount(values[asset][index]) if record else "")
         self.loaded_period = period
+        self.loaded_user_id = self.store.user_id
         self.original_values = self.field_values()
-        self.entry_heading.configure(text=f"Monthly entry — {month_label(*period)}")
-        self.save_button.configure(text=f"Save {month_label(*period)}")
-        self.save_button.state(["!disabled"])
-        self.status.configure(text="Saved month loaded. You can update these values." if record else "New month. Enter all eight amounts, using 0 where applicable.")
+        self.entry_heading.configure(text=f"{self.store.user_name} — {month_label(*period)}")
+        self.save_button.configure(text=f"Save {self.store.user_name} — {month_label(*period)}")
+        editable = self.store.user_id is not None
+        self.save_button.state(["!disabled"] if editable else ["disabled"])
+        for entry in self.entry_widgets:
+            entry.state(["!readonly"] if editable else ["readonly"])
+        self.status.configure(text=("Saved month loaded. You can update these values." if record else "New month. Enter all eight amounts, using 0 where applicable.") if editable else "ALL is a combined read-only view. Select a named user to enter data.")
 
     def save_month(self):
         try:
             period = self.selected_period()
-            if period != self.loaded_period:
-                raise ValueError("The month selection changed. Click Load month before entering or saving its values.")
+            if self.store.user_id is None:
+                raise ValueError("ALL is read-only. Select a named user before entering or saving data.")
+            if period != self.loaded_period or self.store.user_id != self.loaded_user_id:
+                raise ValueError("The user or month selection changed. Click Load month before entering or saving its values.")
             values = {}
             for asset, label in ASSETS:
                 try:
@@ -172,14 +234,14 @@ class MyFinanceView:
                 except ValueError as error:
                     raise ValueError(f"{label}: {error}") from None
             existing = self.store.get_month(*period)
-            if existing and not messagebox.askyesno("Update saved month", f"Replace the saved values for {month_label(*period)}?", parent=self.parent):
+            if existing and not messagebox.askyesno("Update saved month", f"Replace {self.store.user_name}'s saved values for {month_label(*period)}?", parent=self.parent):
                 return
             self.store.save_month(*period, values)
         except (ValueError, sqlite3.Error, RuntimeError) as error:
             messagebox.showerror("Cannot save month", str(error), parent=self.parent)
             return
         self.original_values = self.field_values()
-        self.status.configure(text=f"Saved {month_label(*period)} on this computer. Open All months to view it.")
+        self.status.configure(text=f"Saved {self.store.user_name} — {month_label(*period)} on this computer.")
         self.refresh_history(period)
 
     def refresh_history(self, preferred_period=None):
@@ -188,13 +250,19 @@ class MyFinanceView:
                 tree.delete(item)
         self.history_rows = {}
         self.detail_heading.configure(text="Select a month to see its breakdown")
+        self.combined_status.configure(text="")
+        self.combined_rows = {}
         try:
             rows = self.store.history()
+            combined = self.combined_store.history()
         except (sqlite3.Error, RuntimeError) as error:
             self.graph.set_history(())
             messagebox.showerror("Cannot read history", str(error), parent=self.parent)
             return
         self.graph.set_history(rows)
+        self.graph.set_scope(self.store.user_name)
+        self.combined_rows = {(row.record.year, row.record.month): row for row in combined}
+        self.edit_button.state(["disabled"] if self.store.user_id is None else ["!disabled"])
         for row in rows:
             period = (row.record.year, row.record.month)
             item = f"{period[0]}-{period[1]:02d}"
@@ -204,7 +272,7 @@ class MyFinanceView:
                 format_amount(change.invested_diff, signed=True), format_amount(change.current_diff, signed=True),
             ))
             self.history.insert("", "end", iid=item, text=month_label(*period), values=values)
-        self.history_heading.configure(text="Monthly finance history" if rows else "No saved months yet — add your first monthly entry")
+        self.history_heading.configure(text=f"{self.store.user_name} — monthly finance history" if rows else f"{self.store.user_name} — no saved months yet")
         if rows:
             item = f"{preferred_period[0]}-{preferred_period[1]:02d}" if preferred_period else next(iter(self.history_rows))
             if item in self.history_rows:
@@ -217,18 +285,38 @@ class MyFinanceView:
         if not selected or selected[0] not in self.history_rows:
             return
         row = self.history_rows[selected[0]]
-        self.detail_heading.configure(text=f"{month_label(row.record.year, row.record.month)} — all assets")
+        self.detail_heading.configure(text=f"{month_label(row.record.year, row.record.month)} — {self.store.user_name} and ALL totals")
         for item in self.details.get_children():
             self.details.delete(item)
         labels = dict(ASSETS)
-        for change in row.changes:
+        for change in row.changes if self.store.user_id is not None else ():
             self.details.insert("", "end", values=(
                 labels[change.balance.asset], format_amount(change.balance.invested),
                 format_amount(change.balance.current), format_amount(change.invested_diff, signed=True),
                 format_amount(change.current_diff, signed=True),
             ))
+        combined = self.combined_rows.get((row.record.year, row.record.month))
+        if combined is not None:
+            for change in combined.changes:
+                self.details.insert("", "end", tags=("combined",), values=(
+                    f"ALL • {labels[change.balance.asset]}", format_amount(change.balance.invested),
+                    format_amount(change.balance.current), format_amount(change.invested_diff, signed=True),
+                    format_amount(change.current_diff, signed=True),
+                ))
+            def difference_total(field):
+                values = [getattr(change, field) for change in combined.changes]
+                return sum(values) if all(value is not None for value in values) else None
+            self.details.insert("", "end", tags=("combined",), values=(
+                "ALL • Total", format_amount(sum(change.balance.invested for change in combined.changes)),
+                format_amount(sum(change.balance.current for change in combined.changes)),
+                format_amount(difference_total("invested_diff"), signed=True),
+                format_amount(difference_total("current_diff"), signed=True),
+            ))
+            self.combined_status.configure(text=f"ALL includes {len(combined.record.user_ids)} of {len(self.user_choices)} users with saved data for this month. Missing snapshots are excluded; ALL MoM is — if the reporting users differ between adjacent months.")
 
     def edit_selected(self, event=None):
+        if self.store.user_id is None:
+            return
         selected = self.history.selection()
         if not selected or selected[0] not in self.history_rows:
             return

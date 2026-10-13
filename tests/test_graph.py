@@ -7,13 +7,15 @@ from finance_app.modules.finance import ASSETS, MONTHS, FinanceStore
 from finance_app.modules.finance_graph import FinanceGraph, GraphPoint, axis_range, make_series, segments
 from finance_app.modules.my_finance import MyFinanceView
 from finance_app.storage import Database
+from finance_app.modules.users import UserStore
 
 
 class GraphTests(unittest.TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
         self.database = Database(self.directory.name)
-        self.store = FinanceStore(self.database)
+        self.user = UserStore(self.database).add("Synthetic user")
+        self.store = FinanceStore(self.database, self.user.id)
         self.store.save_month(2025, 12, {asset: (10000, 15000) for asset, _ in ASSETS})
         self.store.save_month(2026, 1, {asset: (12000, 14000) for asset, _ in ASSETS})
         self.store.save_month(2026, 3, {asset: (18000, 21000) for asset, _ in ASSETS})
@@ -76,6 +78,7 @@ class GraphTests(unittest.TestCase):
         graph.hint = "Hover for details"
         graph.hover_text = Mock()
         graph.history = self.store.history()
+        graph.scope_name = "Synthetic user"
         graph.enabled = {key: Mock(get=Mock(return_value=True)) for key in enabled}
         return graph
 
@@ -110,7 +113,9 @@ class EntryPeriodTests(unittest.TestCase):
         self.tcl = tk.Tcl()
         self.view = MyFinanceView.__new__(MyFinanceView)
         self.view.parent = None
-        self.view.store = FinanceStore(self.database)
+        self.user = UserStore(self.database).add("Entry test user")
+        self.view.store = FinanceStore(self.database, self.user.id)
+        self.view.loaded_user_id = self.user.id
         self.view.month = tk.StringVar(master=self.tcl, value=MONTHS[2])
         self.view.year = tk.StringVar(master=self.tcl, value="2024")
         self.view.loaded_period = (2024, 3)

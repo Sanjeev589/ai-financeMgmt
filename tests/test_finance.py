@@ -9,6 +9,7 @@ from finance_app.modules.finance import (
     ASSETS, MAX_AMOUNT, FinanceStore, format_amount, month_label, parse_amount, previous_period,
 )
 from finance_app.storage import Database
+from finance_app.modules.users import UserStore
 
 
 def sample_values(invested=10000, current=12000):
@@ -40,7 +41,8 @@ class FinanceTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.database = Database(self.temp.name)
-        self.store = FinanceStore(self.database)
+        self.user = UserStore(self.database).add("Synthetic user")
+        self.store = FinanceStore(self.database, self.user.id)
 
     def tearDown(self):
         self.database.close()
@@ -51,7 +53,7 @@ class FinanceTests(unittest.TestCase):
         self.store.save_month(2026, 10, sample_values())
         self.database.close()
         self.database = Database(self.temp.name)
-        self.store = FinanceStore(self.database)
+        self.store = FinanceStore(self.database, self.user.id)
         record = self.store.get_month(2026, 10)
         self.assertEqual([balance.asset for balance in record.balances], [asset for asset, _ in ASSETS])
         self.assertEqual((record.balances[0].invested, record.balances[0].current), (10000, 12000))
@@ -125,14 +127,14 @@ class FinanceTests(unittest.TestCase):
 
     def test_incomplete_record_is_not_silently_treated_as_zero(self):
         self.database.connection.execute(
-            "INSERT INTO monthly_finance VALUES (?, ?, ?, ?, ?)", (2026, 10, "stocks", 100, 100)
+            "INSERT INTO monthly_finance VALUES (?, ?, ?, ?, ?, ?)", (self.user.id, 2026, 10, "stocks", 100, 100)
         )
         with self.assertRaises(RuntimeError):
             self.store.history()
 
 
 class MigrationTests(unittest.TestCase):
-    def test_old_settings_survive_upgrade_to_schema_two(self):
+    def test_old_settings_survive_upgrade_to_current_schema(self):
         with tempfile.TemporaryDirectory() as directory:
             with sqlite3.connect(Path(directory) / "finance.sqlite3") as connection:
                 connection.execute("CREATE TABLE app_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
@@ -141,8 +143,9 @@ class MigrationTests(unittest.TestCase):
             database = Database(directory)
             try:
                 self.assertEqual(database.connection.execute("SELECT value FROM app_settings").fetchone()[0], "synthetic")
-                FinanceStore(database).save_month(2026, 10, sample_values())
-                self.assertEqual(database.connection.execute("PRAGMA user_version").fetchone()[0], 2)
+                user = UserStore(database).add("Synthetic user")
+                FinanceStore(database, user.id).save_month(2026, 10, sample_values())
+                self.assertEqual(database.connection.execute("PRAGMA user_version").fetchone()[0], 3)
             finally:
                 database.close()
 
@@ -165,13 +168,16 @@ from finance_app.privacy import enable_offline_policy
 enable_offline_policy()
 from finance_app.storage import Database
 from finance_app.modules.finance import ASSETS, FinanceStore
+from finance_app.modules.users import UserStore
 from finance_app.modules.registry import MODULES
 assert MODULES[0].title == "My Finance"
 with tempfile.TemporaryDirectory() as directory:
     database = Database(directory)
-    store = FinanceStore(database)
+    user = UserStore(database).add("Offline user")
+    store = FinanceStore(database, user.id)
     store.save_month(2026, 10, {asset: (100, 200) for asset, _ in ASSETS})
     assert store.history()[0].changes[0].balance.current == 200
+    assert FinanceStore(database, None).history()[0].changes[0].balance.current == 200
     database.close()
 '''
         result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)

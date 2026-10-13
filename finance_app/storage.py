@@ -31,7 +31,7 @@ class Database:
                 self.path.chmod(0o600)
             self.connection.execute("PRAGMA foreign_keys = ON")
             version = self.connection.execute("PRAGMA user_version").fetchone()[0]
-            if version > 2:
+            if version > 3:
                 raise RuntimeError("This database requires a newer application version.")
             # Explicit BEGIN makes SQLite DDL and user_version one transaction.
             self.connection.execute("BEGIN")
@@ -55,7 +55,40 @@ class Database:
                             PRIMARY KEY (year, month, asset)
                         )
                     """)
-                self.connection.execute("PRAGMA user_version = 2")
+                if version < 3:
+                    self.connection.execute("""
+                        CREATE TABLE users (
+                            id INTEGER PRIMARY KEY,
+                            name TEXT NOT NULL CHECK (length(name) BETWEEN 1 AND 100),
+                            name_key TEXT NOT NULL UNIQUE CHECK (name_key != 'all')
+                        )
+                    """)
+                    self.connection.execute("ALTER TABLE monthly_finance RENAME TO monthly_finance_legacy")
+                    self.connection.execute("""
+                        CREATE TABLE monthly_finance (
+                            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+                            year INTEGER NOT NULL CHECK (year BETWEEN 1900 AND 9999),
+                            month INTEGER NOT NULL CHECK (month BETWEEN 1 AND 12),
+                            asset TEXT NOT NULL CHECK (asset IN ('stocks', 'mutual_funds', 'fd', 'rd')),
+                            invested INTEGER NOT NULL CHECK (
+                                typeof(invested) = 'integer' AND invested BETWEEN 0 AND 99999999999999
+                            ),
+                            current INTEGER NOT NULL CHECK (
+                                typeof(current) = 'integer' AND current BETWEEN 0 AND 99999999999999
+                            ),
+                            PRIMARY KEY (user_id, year, month, asset)
+                        )
+                    """)
+                    if self.connection.execute("SELECT COUNT(*) FROM monthly_finance_legacy").fetchone()[0]:
+                        cursor = self.connection.execute(
+                            "INSERT INTO users (name, name_key) VALUES (?, ?)", ("Existing data", "existing data")
+                        )
+                        self.connection.execute("""
+                            INSERT INTO monthly_finance (user_id, year, month, asset, invested, current)
+                            SELECT ?, year, month, asset, invested, current FROM monthly_finance_legacy
+                        """, (cursor.lastrowid,))
+                    self.connection.execute("DROP TABLE monthly_finance_legacy")
+                self.connection.execute("PRAGMA user_version = 3")
         except Exception:
             self.connection.close()
             raise

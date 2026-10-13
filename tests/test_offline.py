@@ -18,7 +18,7 @@ class StorageTests(unittest.TestCase):
             database.close()
             database = Database(folder)
             self.assertEqual(database.connection.execute("SELECT value FROM app_settings WHERE key = ?", ("test",)).fetchone(), ("synthetic",))
-            self.assertEqual(database.connection.execute("PRAGMA user_version").fetchone()[0], 2)
+            self.assertEqual(database.connection.execute("PRAGMA user_version").fetchone()[0], 3)
             database.close()
 
     def test_data_inside_repository_rejected(self):
@@ -29,7 +29,7 @@ class StorageTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / "finance.sqlite3"
             with sqlite3.connect(path) as connection:
-                connection.execute("PRAGMA user_version = 3")
+                connection.execute("PRAGMA user_version = 4")
             with self.assertRaises(RuntimeError):
                 Database(folder)
 
