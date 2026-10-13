@@ -298,7 +298,7 @@ class UserMigrationTests(unittest.TestCase):
                 record = FinanceStore(database, users[0].id).get_month(2026, 9)
                 self.assertTrue(all(balance.invested == 1000 and balance.current == 2000 for balance in record.balances))
                 self.assertEqual(database.connection.execute("SELECT value FROM app_settings").fetchone()[0], "kept")
-                self.assertEqual(database.connection.execute("PRAGMA user_version").fetchone()[0], 4)
+                self.assertEqual(database.connection.execute("PRAGMA user_version").fetchone()[0], 5)
             finally:
                 database.close()
 

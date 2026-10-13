@@ -25,9 +25,13 @@ def calculator(database, tcl):
     for name, value in (("user", "ALL"), ("month", "October"), ("year", "2026"), ("amount", ""), ("category", ""), ("subcategory", ""), ("description", "")):
         setattr(view, name, tk.StringVar(master=tcl, value=value))
     view.loaded_scope = None
+    view.day = tk.StringVar(master=tcl, value="1")
+    view.one_time = tk.BooleanVar(master=tcl, value=False)
+    view.exclude_one_time = tk.BooleanVar(master=tcl, value=False)
+    view.reports = Mock()
     view.entries_by_id = {}
     view.original_values = view.form_values()
-    for name in ("status", "heading", "add_button", "delete_button", "category_box", "subcategory_box", "amount_entry", "description_entry", "total", "combined_total"):
+    for name in ("status", "heading", "add_button", "delete_button", "category_box", "subcategory_box", "amount_entry", "description_entry", "day_entry", "one_time_box", "total", "combined_total"):
         setattr(view, name, Mock())
     view.entries, view.category_totals, view.subcategory_totals = MemoryTree(), MemoryTree(), MemoryTree()
     return view

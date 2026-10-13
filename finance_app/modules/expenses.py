@@ -1,6 +1,7 @@
 """Local monthly expenses and category totals in integer paise."""
 
 from dataclasses import dataclass
+from datetime import date
 import sqlite3
 
 from .finance import MAX_AMOUNT, validate_period
@@ -76,6 +77,8 @@ class Expense:
     subcategory: str
     amount: int
     description: str
+    day: int | None = None
+    one_time: bool = False
 
 
 @dataclass(frozen=True)
@@ -86,16 +89,40 @@ class ExpenseSummary:
     total: int
 
 
+def report_months(year, period, month=None, quarter=None):
+    """Calendar quarters and years, never financial-year assumptions."""
+    validate_period(year, 1)
+    if period == "Monthly":
+        validate_period(year, month)
+        return (month,)
+    if period == "Quarterly":
+        if type(quarter) is not int or not 1 <= quarter <= 4:
+            raise ValueError("Choose a quarter from Q1 to Q4.")
+        return tuple(range((quarter - 1) * 3 + 1, quarter * 3 + 1))
+    if period == "Yearly":
+        return tuple(range(1, 13))
+    raise ValueError("Choose Monthly, Quarterly, or Yearly.")
+
+
 class ExpenseStore:
     def __init__(self, database, user_id):
         self.connection = database.connection
         self.user_id = user_id
         self.user_name = "ALL" if user_id is None else UserStore(database).get(user_id).name
 
-    def add(self, year, month, amount, category_id, subcategory_id, description=""):
+    def add(self, year, month, amount, category_id, subcategory_id, description="", *, day=None, one_time=False):
         if self.user_id is None:
             raise ValueError("Select a named user before adding an expense. ALL is read-only.")
         validate_period(year, month)
+        if day is not None:
+            if type(day) is not int:
+                raise ValueError("Day must be a valid whole-number day in the selected month.")
+            try:
+                date(year, month, day)
+            except ValueError:
+                raise ValueError("Day must be a valid day in the selected month and year.") from None
+        if type(one_time) is not bool:
+            raise ValueError("One-time expense must be checked or unchecked.")
         if type(amount) is not int or not 1 <= amount <= MAX_AMOUNT:
             raise ValueError("Amount must be greater than zero, with at most two decimal places.")
         if type(category_id) is not int or type(subcategory_id) is not int:
@@ -109,26 +136,33 @@ class ExpenseStore:
             raise ValueError("Description must be at most 500 characters, without control characters.")
         with self.connection:
             cursor = self.connection.execute("""
-                INSERT INTO expenses (user_id, year, month, subcategory_id, amount, description)
-                VALUES (?, ?, ?, ?, ?, ?)
-            """, (self.user_id, year, month, subcategory_id, amount, description.strip()))
+                INSERT INTO expenses (user_id, year, month, subcategory_id, amount, description, day, one_time)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, (self.user_id, year, month, subcategory_id, amount, description.strip(), day, int(one_time)))
         return cursor.lastrowid
 
-    def summary(self, year, month):
-        validate_period(year, month)
+    def summary(self, year, month, exclude_one_time=False):
+        return self.report(year, "Monthly", month=month, exclude_one_time=exclude_one_time)
+
+    def report(self, year, period, *, month=None, quarter=None, exclude_one_time=False):
+        months = report_months(year, period, month, quarter)
+        if type(exclude_one_time) is not bool:
+            raise ValueError("Exclude one-time expenses must be checked or unchecked.")
         sql = """
-            SELECT e.id, e.user_id, u.name, e.year, e.month, c.id, c.name, s.id, s.name, e.amount, e.description
+            SELECT e.id, e.user_id, u.name, e.year, e.month, c.id, c.name, s.id, s.name, e.amount, e.description, e.day, e.one_time
             FROM expenses e JOIN users u ON u.id = e.user_id
             JOIN expense_subcategories s ON s.id = e.subcategory_id
             JOIN expense_categories c ON c.id = s.category_id
-            WHERE e.year = ? AND e.month = ?
+            WHERE e.year = ? AND e.month BETWEEN ? AND ?
         """
-        parameters = [year, month]
+        parameters = [year, months[0], months[-1]]
         if self.user_id is not None:
             sql += " AND e.user_id = ?"
             parameters.append(self.user_id)
+        if exclude_one_time:
+            sql += " AND e.one_time = 0"
         sql += " ORDER BY e.id DESC"
-        entries = tuple(Expense(*row) for row in self.connection.execute(sql, parameters))
+        entries = tuple(Expense(*row[:-1], bool(row[-1])) for row in self.connection.execute(sql, parameters))
         categories, subcategories = {}, {}
         for expense in entries:
             for mapping, key in ((categories, expense.category), (subcategories, (expense.category, expense.subcategory))):

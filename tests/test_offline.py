@@ -18,7 +18,7 @@ class StorageTests(unittest.TestCase):
             database.close()
             database = Database(folder)
             self.assertEqual(database.connection.execute("SELECT value FROM app_settings WHERE key = ?", ("test",)).fetchone(), ("synthetic",))
-            self.assertEqual(database.connection.execute("PRAGMA user_version").fetchone()[0], 4)
+            self.assertEqual(database.connection.execute("PRAGMA user_version").fetchone()[0], 5)
             database.close()
 
     def test_data_inside_repository_rejected(self):
@@ -29,7 +29,7 @@ class StorageTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / "finance.sqlite3"
             with sqlite3.connect(path) as connection:
-                connection.execute("PRAGMA user_version = 5")
+                connection.execute("PRAGMA user_version = 6")
             with self.assertRaises(RuntimeError):
                 Database(folder)
 
@@ -62,7 +62,7 @@ with sqlite3.connect(":memory:") as connection:
         self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_application_imports_are_explicit_and_local(self):
-        allowed = {"sys", "os", "pathlib", "sqlite3", "tkinter", "dataclasses", "typing", "datetime", "re"}
+        allowed = {"sys", "os", "pathlib", "sqlite3", "tkinter", "dataclasses", "typing", "datetime", "re", "calendar"}
         root = Path(__file__).resolve().parents[1] / "finance_app"
         for path in root.rglob("*.py"):
             tree = ast.parse(path.read_text())

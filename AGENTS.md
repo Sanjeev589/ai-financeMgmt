@@ -15,6 +15,9 @@
   snapshots for each month. Never save ALL amounts as an individual user's data.
 - Calculate MoM automatically. Combined MoM is unknown if reporting users differ
   between adjacent months. Preserve pre-user records under Existing data on migration.
+- Expense reports use calendar months/quarters/years and the selected user. Apply
+  one-time exclusion consistently to totals and charts without changing records.
+  Preserve legacy unknown days; never invent a date when migrating expense data.
 - Run `python -m unittest discover -s tests -v` before every source commit.
 - Review the exact staged file list before committing and uploading source updates.
 - No repository publishing code or GitHub credentials belong inside the application.

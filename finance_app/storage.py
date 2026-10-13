@@ -31,7 +31,7 @@ class Database:
                 self.path.chmod(0o600)
             self.connection.execute("PRAGMA foreign_keys = ON")
             version = self.connection.execute("PRAGMA user_version").fetchone()[0]
-            if version > 4:
+            if version > 5:
                 raise RuntimeError("This database requires a newer application version.")
             # Explicit BEGIN makes SQLite DDL and user_version one transaction.
             self.connection.execute("BEGIN")
@@ -120,7 +120,20 @@ class Database:
                     """)
                     self.connection.execute("CREATE INDEX expense_scope ON expenses (user_id, year, month)")
                     self.connection.execute("CREATE INDEX expense_month ON expenses (year, month)")
-                self.connection.execute("PRAGMA user_version = 4")
+                if version < 5:
+                    self.connection.execute("""
+                        ALTER TABLE expenses ADD COLUMN day INTEGER CHECK (
+                            day IS NULL OR (typeof(day) = 'integer' AND day BETWEEN 1 AND
+                                CASE WHEN month IN (4, 6, 9, 11) THEN 30
+                                     WHEN month = 2 THEN 28 + (year % 400 = 0 OR (year % 4 = 0 AND year % 100 != 0))
+                                     ELSE 31 END)
+                        )
+                    """)
+                    self.connection.execute("""
+                        ALTER TABLE expenses ADD COLUMN one_time INTEGER NOT NULL DEFAULT 0
+                        CHECK (typeof(one_time) = 'integer' AND one_time IN (0, 1))
+                    """)
+                self.connection.execute("PRAGMA user_version = 5")
         except Exception:
             self.connection.close()
             raise

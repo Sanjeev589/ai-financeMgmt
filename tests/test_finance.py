@@ -145,7 +145,7 @@ class MigrationTests(unittest.TestCase):
                 self.assertEqual(database.connection.execute("SELECT value FROM app_settings").fetchone()[0], "synthetic")
                 user = UserStore(database).add("Synthetic user")
                 FinanceStore(database, user.id).save_month(2026, 10, sample_values())
-                self.assertEqual(database.connection.execute("PRAGMA user_version").fetchone()[0], 4)
+                self.assertEqual(database.connection.execute("PRAGMA user_version").fetchone()[0], 5)
             finally:
                 database.close()
 

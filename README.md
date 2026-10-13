@@ -1,8 +1,8 @@
 # Personal Finance Management
 
 An offline Python desktop application, built one user-defined menu at a time.
-Version 0.5 provides named users, My Finance monthly entry and graphs, an Expense
-Calculator with monthly category totals, local SQLite storage, and privacy enforcement.
+Version 0.6 provides named users, My Finance monthly entry and graphs, an Expense
+Calculator with period reports, amount/pie charts, one-time filters, and local storage.
 
 ## Run
 
@@ -99,9 +99,13 @@ or closing the application.
    **Year**, and click **Load month**. Each expense belongs to that user and month.
    **ALL** shows combined expenses across users for the selected month and is read-only.
 2. Enter a positive **Amount** in INR (up to two decimal places, without commas),
+   a valid **Day of month** within the loaded month/year,
    choose **Category** and **Subcategory** from the dropdowns, and optionally enter
    a **Description** of up to 500 characters. Subcategory choices are filtered by
    the selected category. Changing category clears the old subcategory selection.
+   Check **One-time expense** for a rare or exceptional expense. This flag is saved
+   against the record and is visible in the entry list; it resets after adding an
+   expense so the next entry is not accidentally flagged.
 3. Click **Add expense**. You can add multiple entries in the same category and
    month. Each is a separate expense, so identical values are counted separately.
    The entry list and totals update immediately after saving.
@@ -111,6 +115,30 @@ or closing the application.
    years are never mixed.
 5. To correct an entry, select it, click **Remove selected expense**, confirm,
    and add the corrected expense. Removal is restricted to the loaded user/month.
+6. Open **Reports & charts**. Small **Monthly**, **Quarterly**, and **Yearly**
+   options select the report period. Choose a year and a month or quarter where
+   applicable. Reports use the user loaded above, including ALL. The **Figures**
+   tab shows the whole-period total and category/subcategory amounts and counts.
+7. Use **Amount graph** for amount on the y-axis and **days** for a selected month,
+   or **months** for a quarter/year on the x-axis. **Breakdown** selects Overall,
+   Category, or Subcategory. Category/subcategory graphs use stacked bars, so each
+   bar's full height equals the total for that day/month. The legend shows exact
+   period amounts and percentage shares.
+8. Open **Pie chart** for the selected month, quarter, or year using the same
+   breakdown. **Exclude one-time expenses from figures and charts** applies to
+   monthly lists/totals, period reports, amount graphs, pie charts, and ALL totals.
+   Filtering never deletes or modifies any expense; uncheck to include it again.
+
+Quarters are calendar quarters: Q1 January–March, Q2 April–June, Q3 July–September,
+and Q4 October–December. Yearly reports cover January–December of the selected year.
+An empty/fully filtered period shows zero and an empty-state chart.
+
+Existing expense records have no known day: the upgrade preserves them as
+**Undated**, with one-time unchecked. Monthly daily graphs show these amounts in
+an **Undated** bucket. They remain included in monthly, quarterly, yearly, and pie
+totals. Dates are validated for the selected month/year, including leap years.
+Financial calculations stay in integer paise; only chart pixel positions and
+slice angles use floating point.
 
 **Dropdown definitions are awaiting the user's category/subcategory list.** No
 guessed categories are installed in real databases. Until values are configured,
@@ -159,6 +187,14 @@ Expense tests additionally enter **80 synthetic expenses** through the entry UI
 callbacks for five users across two months. They verify every category/subcategory
 sum, entry count, per-user and ALL monthly total, dependent dropdowns, removal,
 persistence, schema upgrade, validation, and operation with networking blocked.
+
+Period-report tests use five synthetic users and **480 expense records over two
+years**. They compare every month, quarter, and year, both including and excluding
+one-time expenses; verify category/subcategory and ALL sums; validate daily/monthly
+chart data and pie slice totals; and exercise the actual rendering callbacks with
+recording canvases. They also check leap days, undated migration, empty charts,
+flag persistence, and filtering without data loss. Visual desktop layout/font
+verification still requires a display.
 
 New menus live under `finance_app/modules/` and are registered in
 `finance_app/modules/registry.py`. Each builder receives the content frame and

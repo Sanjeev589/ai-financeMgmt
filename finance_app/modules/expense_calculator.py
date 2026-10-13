@@ -6,6 +6,7 @@ import tkinter as tk
 from tkinter import messagebox, ttk
 
 from .expenses import ExpenseCatalog, ExpenseStore
+from .expense_reports import ExpenseReports
 from .finance import MONTHS, format_amount, month_label, parse_amount, validate_period
 from .users import UserStore
 
@@ -28,11 +29,15 @@ class ExpenseCalculatorView:
         self.category = tk.StringVar(master=parent)
         self.subcategory = tk.StringVar(master=parent)
         self.description = tk.StringVar(master=parent)
+        self.day = tk.StringVar(master=parent, value=str(today.day))
+        self.one_time = tk.BooleanVar(master=parent, value=False)
+        self.exclude_one_time = tk.BooleanVar(master=parent, value=False)
         self.original_values = self.form_values()
         self._build()
         self.load_month(check_changes=False)
         for variable in (self.user, self.month, self.year):
             variable.trace_add("write", self.scope_changed)
+        self.exclude_one_time.trace_add("write", self.filter_changed)
 
     def _build(self):
         selector = ttk.LabelFrame(self.parent, text="Monthly expenses — select user, month, and year", padding=12)
@@ -47,12 +52,15 @@ class ExpenseCalculatorView:
         ttk.Button(selector, text="Load month", command=self.load_month).grid(row=1, column=4, padx=(12, 0))
         self.heading = ttk.Label(self.parent, style="Heading.TLabel", wraplength=720)
         self.heading.pack(anchor="w", pady=(0, 8))
+        ttk.Checkbutton(self.parent, text="Exclude one-time expenses from figures and charts", variable=self.exclude_one_time).pack(anchor="w", pady=(0, 8))
 
         tabs = ttk.Notebook(self.parent)
         tabs.pack(fill="both", expand=True)
-        entry_tab, totals_tab = ttk.Frame(tabs, padding=12), ttk.Frame(tabs, padding=12)
+        entry_tab, totals_tab, reports_tab = (ttk.Frame(tabs, padding=12) for _ in range(3))
         tabs.add(entry_tab, text="Monthly entries")
         tabs.add(totals_tab, text="Category totals")
+        tabs.add(reports_tab, text="Reports & charts")
+        self.reports = ExpenseReports(reports_tab, self.database, self.exclude_one_time)
         form = ttk.LabelFrame(entry_tab, text="Add an expense", padding=12)
         form.pack(fill="x", pady=(0, 8))
         form.columnconfigure(1, weight=1)
@@ -60,6 +68,9 @@ class ExpenseCalculatorView:
         ttk.Label(form, text="Amount (₹)").grid(row=0, column=0, sticky="w", padx=(0, 10), pady=4)
         self.amount_entry = ttk.Entry(form, textvariable=self.amount, width=20)
         self.amount_entry.grid(row=0, column=1, sticky="ew", padx=(0, 12), pady=4)
+        ttk.Label(form, text="Day of month").grid(row=0, column=2, sticky="w", padx=(0, 10), pady=4)
+        self.day_entry = ttk.Spinbox(form, textvariable=self.day, from_=1, to=31, width=6)
+        self.day_entry.grid(row=0, column=3, sticky="w", pady=4)
         ttk.Label(form, text="Category").grid(row=1, column=0, sticky="w", padx=(0, 10), pady=4)
         self.category_box = ttk.Combobox(form, textvariable=self.category, values=tuple(self.category_choices), state="readonly", width=22)
         self.category_box.grid(row=1, column=1, sticky="ew", padx=(0, 12), pady=4)
@@ -70,12 +81,14 @@ class ExpenseCalculatorView:
         ttk.Label(form, text="Description").grid(row=2, column=0, sticky="w", padx=(0, 10), pady=4)
         self.description_entry = ttk.Entry(form, textvariable=self.description)
         self.description_entry.grid(row=2, column=1, columnspan=3, sticky="ew", pady=4)
-        ttk.Label(form, text="Amount, category, and subcategory are required. Description is optional. No commas in amounts.", wraplength=680).grid(row=3, column=0, columnspan=4, sticky="w", pady=(8, 4))
+        self.one_time_box = ttk.Checkbutton(form, text="One-time expense (rare or exceptional)", variable=self.one_time)
+        self.one_time_box.grid(row=3, column=0, columnspan=4, sticky="w", pady=(6, 0))
+        ttk.Label(form, text="Amount, valid day, category, and subcategory are required. Description is optional. No commas in amounts.", wraplength=680).grid(row=4, column=0, columnspan=4, sticky="w", pady=(8, 4))
         self.add_button = ttk.Button(form, text="Add expense", command=self.add_expense)
-        self.add_button.grid(row=4, column=0, columnspan=2, sticky="w", pady=(4, 0))
+        self.add_button.grid(row=5, column=0, columnspan=2, sticky="w", pady=(4, 0))
         self.status = ttk.Label(entry_tab, wraplength=700)
         self.status.pack(anchor="w", pady=(0, 8))
-        self.entries = self._table(entry_tab, (("user", "User", 120), ("category", "Category", 140), ("subcategory", "Subcategory", 140), ("description", "Description", 240), ("amount", "Amount (₹)", 140)), height=8)
+        self.entries = self._table(entry_tab, (("user", "User", 120), ("day", "Day", 70), ("category", "Category", 140), ("subcategory", "Subcategory", 140), ("description", "Description", 240), ("one_time", "One-time", 90), ("amount", "Amount (₹)", 140)), height=8)
         self.delete_button = ttk.Button(entry_tab, text="Remove selected expense", command=self.remove_expense)
         self.delete_button.pack(anchor="w", pady=(8, 0))
 
@@ -118,7 +131,7 @@ class ExpenseCalculatorView:
         return None if name == "ALL" else self.user_choices[name], year, month
 
     def form_values(self):
-        return tuple(variable.get() for variable in (self.amount, self.category, self.subcategory, self.description))
+        return tuple(variable.get() for variable in (self.amount, self.category, self.subcategory, self.description, self.day, self.one_time))
 
     def can_discard_changes(self):
         return self.form_values() == self.original_values or messagebox.askyesno("Unsaved expense", "Discard the expense that has not been added?", parent=self.parent)
@@ -137,6 +150,8 @@ class ExpenseCalculatorView:
         editable = self.store.user_id is not None
         self.amount_entry.state(["!readonly"] if editable else ["readonly"])
         self.description_entry.state(["!readonly"] if editable else ["readonly"])
+        self.day_entry.state(["!readonly"] if editable else ["readonly"])
+        self.one_time_box.state(["!disabled"] if editable else ["disabled"])
         self.category_box.configure(state="readonly" if editable and self.category_choices else "disabled")
         self.subcategory_box.configure(state="readonly" if editable and self.subcategory_choices else "disabled")
         self.add_button.state(["!disabled"] if editable and self.category_choices else ["disabled"])
@@ -161,19 +176,23 @@ class ExpenseCalculatorView:
             if check_changes and not self.can_discard_changes():
                 return
             store = ExpenseStore(self.database, scope[0])
-            summary = store.summary(*scope[1:])
-            combined = ExpenseStore(self.database, None).summary(*scope[1:])
+            summary = store.summary(*scope[1:], exclude_one_time=self.exclude_one_time.get())
+            combined = ExpenseStore(self.database, None).summary(*scope[1:], exclude_one_time=self.exclude_one_time.get())
         except (ValueError, sqlite3.Error) as error:
             messagebox.showerror("Cannot load expenses", str(error), parent=self.parent)
             return
         self.store, self.loaded_scope = store, scope
         for variable in (self.amount, self.category, self.subcategory, self.description):
             variable.set("")
+        today = date.today()
+        self.day.set(str(today.day if (today.year, today.month) == scope[1:] else 1))
+        self.one_time.set(False)
         self.category_changed()
         self.original_values = self.form_values()
         self.heading.configure(text=f"{self.store.user_name} — {month_label(*scope[1:])}")
         self._set_controls()
         self.render_summary(summary, combined)
+        self.reports.set_context(*scope)
 
     def render_summary(self, summary, combined):
         for tree in (self.entries, self.category_totals, self.subcategory_totals):
@@ -181,14 +200,15 @@ class ExpenseCalculatorView:
                 tree.delete(item)
         self.entries_by_id = {str(expense.id): expense for expense in summary.entries}
         for expense in summary.entries:
-            self.entries.insert("", "end", iid=str(expense.id), values=(expense.user_name, expense.category, expense.subcategory, expense.description, format_amount(expense.amount)))
+            self.entries.insert("", "end", iid=str(expense.id), values=(expense.user_name, expense.day if expense.day is not None else "Undated", expense.category, expense.subcategory, expense.description, "Yes" if expense.one_time else "No", format_amount(expense.amount)))
         for category, amount, count in summary.category_totals:
             self.category_totals.insert("", "end", values=(category, count, format_amount(amount)))
         for category, subcategory, amount, count in summary.subcategory_totals:
             self.subcategory_totals.insert("", "end", values=(category, subcategory, count, format_amount(amount)))
         label = month_label(*self.loaded_scope[1:])
-        self.total.configure(text=f"{self.store.user_name} • {label} • Total expense: {format_amount(summary.total)} ({len(summary.entries)} entries)")
-        self.combined_total.configure(text=f"ALL users combined • {label}: {format_amount(combined.total)}")
+        filter_label = " • one-time excluded" if self.exclude_one_time.get() else ""
+        self.total.configure(text=f"{self.store.user_name} • {label} • Total expense: {format_amount(summary.total)} ({len(summary.entries)} entries){filter_label}")
+        self.combined_total.configure(text=f"ALL users combined • {label}: {format_amount(combined.total)}{filter_label}")
 
     def require_loaded_user(self):
         scope = self.selected_scope()
@@ -200,7 +220,16 @@ class ExpenseCalculatorView:
 
     def refresh_totals(self):
         period = self.loaded_scope[1:]
-        self.render_summary(self.store.summary(*period), ExpenseStore(self.database, None).summary(*period))
+        self.render_summary(self.store.summary(*period, exclude_one_time=self.exclude_one_time.get()), ExpenseStore(self.database, None).summary(*period, exclude_one_time=self.exclude_one_time.get()))
+        self.reports.refresh()
+
+    def filter_changed(self, *args):
+        if self.loaded_scope is None:
+            return
+        try:
+            self.refresh_totals()
+        except (ValueError, sqlite3.Error) as error:
+            messagebox.showerror("Cannot apply filter", str(error), parent=self.parent)
 
     def add_expense(self):
         try:
@@ -209,9 +238,14 @@ class ExpenseCalculatorView:
             subcategory_id = self.subcategory_choices.get(self.subcategory.get())
             if category_id is None or subcategory_id is None:
                 raise ValueError("Choose a category and its subcategory. Dropdown values must be configured first.")
-            self.store.add(*scope[1:], parse_amount(self.amount.get()), category_id, subcategory_id, self.description.get())
+            try:
+                day = int(self.day.get())
+            except ValueError:
+                raise ValueError("Enter a valid day in the selected month.") from None
+            self.store.add(*scope[1:], parse_amount(self.amount.get()), category_id, subcategory_id, self.description.get(), day=day, one_time=self.one_time.get())
             self.amount.set("")
             self.description.set("")
+            self.one_time.set(False)
             self.original_values = self.form_values()
             self.refresh_totals()
         except (ValueError, sqlite3.Error) as error:

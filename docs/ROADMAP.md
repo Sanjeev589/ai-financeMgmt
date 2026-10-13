@@ -13,6 +13,9 @@
    description fields, dependent dropdowns, exact category and subcategory sums,
    overall monthly totals, and ALL user aggregation. Category definitions await
    the user's supplied list; no guessed definitions are installed.
+   Includes calendar-month/quarter/year figures, daily/monthly stacked amount
+   graphs, pie charts, valid expense days, one-time flags, and a shared exclusion
+   filter. Legacy dates stay undated; filtering never removes saved records.
 5. Implement subsequent user-defined menus with synthetic test data, verify
    locally, and commit and publish only source and documentation to GitHub.
 6. Repeat for each subsequent menu. Never publish application data.
